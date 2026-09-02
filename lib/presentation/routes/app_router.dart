@@ -1,5 +1,6 @@
 // lib/presentation/routes/app_router.dart
 import 'package:flutter/material.dart';
+import 'package:major_project/presentation/views/simulation/simulation_view.dart';
 import '../views/home/home_view.dart';
 import '../views/map/map_placeholder.dart';
 import '../views/alerts/alerts_placeholder.dart';
@@ -19,7 +20,7 @@ class AppRouter {
       case alerts:
         return MaterialPageRoute(builder: (_) => const AlertsPlaceholder());
       case simulation:
-        return MaterialPageRoute(builder: (_) => const SimulationPlaceholder());
+        return MaterialPageRoute(builder: (_) => const SimulationView());
       case AppRouter.settings:
         return MaterialPageRoute(builder: (_) => const SettingsPlaceholder());
       case AppRouter.map:

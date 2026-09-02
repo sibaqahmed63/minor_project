@@ -1,42 +1,67 @@
 // lib/presentation/views/home/home_viewmodel.dart
+
 import 'dart:async';
-import 'dart:math';
-
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../data/models/sensor_models.dart';
+import '../../../providers/service_providers.dart';
 
-/// Simple DTO for environment summary shown on Home
+/// Enhanced DTO holding environment telemetry & AI insights
 class EnvironmentSummary {
-  final String id;
+  final String id; // 'agriculture', 'forest', 'disaster'
   final String name;
-  final double avgTempC;
-  final double avgSoilMoisturePct;
+  final String metric1Label;
+  final String metric1Value;
+  final String metric1Unit;
+  final String metric2Label;
+  final String metric2Value;
+  final String metric2Unit;
   final int activeAlerts;
+  final Map<String, dynamic> aiAnalysis;
+  final SensorModel? latestSensor;
   final DateTime lastUpdated;
 
   EnvironmentSummary({
     required this.id,
     required this.name,
-    required this.avgTempC,
-    required this.avgSoilMoisturePct,
+    required this.metric1Label,
+    required this.metric1Value,
+    required this.metric1Unit,
+    required this.metric2Label,
+    required this.metric2Value,
+    required this.metric2Unit,
     required this.activeAlerts,
+    required this.aiAnalysis,
+    this.latestSensor,
     required this.lastUpdated,
   });
 
+  // FIX: Removed Future and async from copyWith
   EnvironmentSummary copyWith({
     String? id,
     String? name,
-    double? avgTempC,
-    double? avgSoilMoisturePct,
+    String? metric1Label,
+    String? metric1Value,
+    String? metric1Unit,
+    String? metric2Label,
+    String? metric2Value,
+    String? metric2Unit,
     int? activeAlerts,
+    Map<String, dynamic>? aiAnalysis,
+    SensorModel? latestSensor,
     DateTime? lastUpdated,
   }) {
     return EnvironmentSummary(
       id: id ?? this.id,
       name: name ?? this.name,
-      avgTempC: avgTempC ?? this.avgTempC,
-      avgSoilMoisturePct: avgSoilMoisturePct ?? this.avgSoilMoisturePct,
+      metric1Label: metric1Label ?? this.metric1Label,
+      metric1Value: metric1Value ?? this.metric1Value,
+      metric1Unit: metric1Unit ?? this.metric1Unit,
+      metric2Label: metric2Label ?? this.metric2Label,
+      metric2Value: metric2Value ?? this.metric2Value,
+      metric2Unit: metric2Unit ?? this.metric2Unit,
       activeAlerts: activeAlerts ?? this.activeAlerts,
+      aiAnalysis: aiAnalysis ?? this.aiAnalysis,
+      latestSensor: latestSensor ?? this.latestSensor,
       lastUpdated: lastUpdated ?? this.lastUpdated,
     );
   }
@@ -67,72 +92,112 @@ class HomeState {
   }
 }
 
-/// AsyncNotifier-based ViewModel for Home screen
+/// AsyncNotifier ViewModel for Home screen wired to live WebSocket telemetry
 class HomeNotifier extends AsyncNotifier<HomeState> {
   @override
   Future<HomeState> build() async {
-    // initial load (simulate small delay)
-    await Future.delayed(const Duration(milliseconds: 120));
-    final initial = HomeState(
-      environments: _generateMockEnvironments(),
-      selectedEnvironmentId: 'env_1',
+    // Listen to live WebSocket telemetry stream
+    ref.listen<AsyncValue<Map<String, dynamic>>>(
+      telemetryStreamProvider,
+          (previous, next) {
+        next.whenData((data) {
+          _handleIncomingTelemetry(data);
+        });
+      },
+    );
+
+    return HomeState(
+      environments: _initialEnvironments(),
+      selectedEnvironmentId: 'agriculture',
       loading: false,
     );
-    return initial;
   }
 
-  static List<EnvironmentSummary> _generateMockEnvironments() {
+  static List<EnvironmentSummary> _initialEnvironments() {
     final now = DateTime.now();
     return [
       EnvironmentSummary(
-        id: 'env_1',
+        id: 'agriculture',
         name: 'Agriculture Field A',
-        avgTempC: 29.8,
-        avgSoilMoisturePct: 42.0,
-        activeAlerts: 1,
-        lastUpdated: now.subtract(const Duration(minutes: 2)),
-      ),
-      EnvironmentSummary(
-        id: 'env_2',
-        name: 'Forest Zone 3',
-        avgTempC: 24.3,
-        avgSoilMoisturePct: 58.5,
+        metric1Label: 'Temperature',
+        metric1Value: '29.8',
+        metric1Unit: 'C',
+        metric2Label: 'Soil moisture',
+        metric2Value: '42.0',
+        metric2Unit: '%',
         activeAlerts: 0,
-        lastUpdated: now.subtract(const Duration(minutes: 5)),
+        aiAnalysis: {},
+        lastUpdated: now,
       ),
       EnvironmentSummary(
-        id: 'env_3',
+        id: 'forest',
+        name: 'Forest Zone 3',
+        metric1Label: 'Temperature',
+        metric1Value: '24.3',
+        metric1Unit: 'C',
+        metric2Label: 'Smoke CO2',
+        metric2Value: '410',
+        metric2Unit: 'PPM',
+        activeAlerts: 0,
+        aiAnalysis: {},
+        lastUpdated: now,
+      ),
+      EnvironmentSummary(
+        id: 'disaster',
         name: 'Disaster Test Area',
-        avgTempC: 35.1,
-        avgSoilMoisturePct: 18.2,
-        activeAlerts: 3,
-        lastUpdated: now.subtract(const Duration(minutes: 1)),
+        metric1Label: 'Flood Level',
+        metric1Value: '0.0',
+        metric1Unit: 'cm',
+        metric2Label: 'Seismic',
+        metric2Value: '0.02',
+        metric2Unit: 'g',
+        activeAlerts: 0,
+        aiAnalysis: {},
+        lastUpdated: now,
       ),
     ];
   }
 
-  /// Simulate refresh: update values with small random noise
-  Future<void> refresh() async {
-    // optimistic UI: set loading flag
+  void _handleIncomingTelemetry(Map<String, dynamic> rawJson) {
     final current = state.value;
     if (current == null) return;
-    state = AsyncData(current.copyWith(loading: true));
 
-    await Future.delayed(const Duration(milliseconds: 700));
-    final rnd = Random();
-    final updated = current.environments.map((e) {
-      final tempNoise = (rnd.nextDouble() - 0.5) * 1.8;
-      final moistureNoise = (rnd.nextDouble() - 0.5) * 4.0;
-      final alertsNoise = rnd.nextInt(2); // 0 or 1
-      return e.copyWith(
-        avgTempC: double.parse((e.avgTempC + tempNoise).toStringAsFixed(1)),
-        avgSoilMoisturePct: double.parse((e.avgSoilMoisturePct + moistureNoise).toStringAsFixed(1)),
-        activeAlerts: (e.activeAlerts + alertsNoise).clamp(0, 9),
-        lastUpdated: DateTime.now(),
-      );
+    final sensor = SensorModel.fromJson(rawJson);
+    final envId = sensor.environment.toLowerCase();
+
+    final updatedEnvironments = current.environments.map((env) {
+      if (env.id == envId) {
+        String m1Val = env.metric1Value;
+        String m2Val = env.metric2Value;
+        int alerts = 0;
+
+        if (envId == 'agriculture') {
+          m1Val = "${sensor.metrics['temperature'] ?? env.metric1Value}";
+          m2Val = "${sensor.metrics['soil_moisture'] ?? env.metric2Value}";
+          if ((sensor.metrics['soil_moisture'] as num? ?? 30) < 25) alerts++;
+        } else if (envId == 'forest') {
+          m1Val = "${sensor.metrics['temperature'] ?? env.metric1Value}";
+          m2Val = "${sensor.metrics['smoke_co2_ppm'] ?? env.metric2Value}";
+          if (sensor.metrics['flame_detected'] == true) alerts++;
+        } else if (envId == 'disaster') {
+          m1Val = "${sensor.metrics['flood_level_cm'] ?? env.metric1Value}";
+          m2Val = "${sensor.metrics['seismic_vibration_g'] ?? env.metric2Value}";
+          if ((sensor.metrics['flood_level_cm'] as num? ?? 0) > 100) alerts++;
+        }
+
+        return env.copyWith(
+          metric1Value: m1Val,
+          metric2Value: m2Val,
+          activeAlerts: alerts,
+          aiAnalysis: sensor.aiAnalysis,
+          latestSensor: sensor,
+          lastUpdated: DateTime.now(),
+        );
+      }
+      return env;
     }).toList();
 
-    state = AsyncData(current.copyWith(environments: updated, loading: false));
+    state = AsyncData(current.copyWith(environments: updatedEnvironments));
   }
 
   void selectEnvironment(String id) {
@@ -141,12 +206,10 @@ class HomeNotifier extends AsyncNotifier<HomeState> {
     state = AsyncData(current.copyWith(selectedEnvironmentId: id));
   }
 
-  EnvironmentSummary? get selectedEnvironment {
-    final current = state.value;
-    if (current == null) return null;
-    return current.environments.firstWhere((e) => e.id == current.selectedEnvironmentId, orElse: () => current.environments.first);
+  Future<void> refresh() async {
+    // Manual pull refresh trigger if required
   }
 }
 
-/// Provider for HomeNotifier using AsyncNotifier pattern
+/// Main ViewModel provider
 final homeViewModelProvider = AsyncNotifierProvider<HomeNotifier, HomeState>(HomeNotifier.new);
