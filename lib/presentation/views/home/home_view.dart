@@ -7,6 +7,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
 import '../../../providers/theme_provider.dart';
+import '../alerts/alerts_viewmodel.dart';
 import 'home_viewmodel.dart';
 
 class HomeView extends ConsumerWidget {
@@ -16,6 +17,9 @@ class HomeView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final asyncState = ref.watch(homeViewModelProvider);
     final vmNotifier = ref.read(homeViewModelProvider.notifier);
+
+    // Watch live alerts state to drive home screen alert counters
+    final alertsState = ref.watch(alertsViewModelProvider).asData?.value;
 
     final asyncTheme = ref.watch(themeModeProvider);
     final isDark = (asyncTheme.asData?.value ?? AppThemeMode.light) == AppThemeMode.dark;
@@ -33,6 +37,11 @@ class HomeView extends ConsumerWidget {
               (e) => e.id == state.selectedEnvironmentId,
           orElse: () => state.environments.first,
         );
+
+        // Compute active unacknowledged alerts for the selected environment
+        final activeEnvAlertsCount = alertsState?.alerts.where((a) =>
+        !a.isAcknowledged && a.environment.toLowerCase() == selected.id.toLowerCase()).length ??
+            selected.activeAlerts;
 
         return Scaffold(
           backgroundColor: isDark ? AppColors.surfaceDark : const Color(0xFFF5F7FB),
@@ -136,7 +145,7 @@ class HomeView extends ConsumerWidget {
                   const SizedBox(height: 22),
                   _buildFieldHeader(context, selected, isDark),
                   const SizedBox(height: 14),
-                  _buildSummaryCards(context, selected, isDark),
+                  _buildSummaryCards(context, selected, activeEnvAlertsCount, isDark),
                   const SizedBox(height: 16),
 
                   // DYNAMIC ALL METRICS GRID
@@ -366,7 +375,7 @@ class HomeView extends ConsumerWidget {
     );
   }
 
-  Widget _buildSummaryCards(BuildContext context, EnvironmentSummary env, bool isDark) {
+  Widget _buildSummaryCards(BuildContext context, EnvironmentSummary env, int activeAlertsCount, bool isDark) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -398,10 +407,10 @@ class HomeView extends ConsumerWidget {
           child: _metricCard(
             context,
             title: 'Alerts',
-            value: '${env.activeAlerts}',
+            value: '$activeAlertsCount',
             unit: 'active',
             icon: Icons.warning_rounded,
-            accent: env.activeAlerts > 0 ? Colors.red : AppColors.warning,
+            accent: activeAlertsCount > 0 ? Colors.red : AppColors.warning,
             isDark: isDark,
           ),
         ),
@@ -626,7 +635,7 @@ class HomeView extends ConsumerWidget {
   }
 
   Widget _buildRecentActivityMock(BuildContext context, EnvironmentSummary env, bool isDark) {
-    final nodeName = env.latestSensor?.node ?? 'Node 1';
+    final nodeName = env.latestSensor?.node ?? 'Agri_Node0';
     return Container(
       decoration: BoxDecoration(
         color: isDark ? AppColors.surfaceMutedDark : Colors.white,
@@ -636,7 +645,7 @@ class HomeView extends ConsumerWidget {
       child: Column(
         children: [
           _activityItem(context, "$nodeName transmitted live telemetry packet over AODV", "Just now", isDark),
-          _activityItem(context, "Routing Table updated for Gateway Node 4", "1 min ago", isDark),
+          _activityItem(context, "Routing Table updated for Local Domain Gateway", "1 min ago", isDark),
           _activityItem(context, "AI Analysis engine evaluated field metrics", "2 mins ago", isDark),
         ],
       ),

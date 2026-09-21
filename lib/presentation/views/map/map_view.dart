@@ -25,6 +25,8 @@ class MapView extends ConsumerWidget {
             ? null
             : nodes.firstWhere((n) => n.id == state.selectedNodeId, orElse: () => nodes.first);
 
+        final agriDeadCount = state.killedNodeIds.where((id) => id.startsWith('Agri_')).length;
+
         return Scaffold(
           appBar: AppBar(
             title: const Text('Mesh Topology Map'),
@@ -33,19 +35,21 @@ class MapView extends ConsumerWidget {
                 margin: const EdgeInsets.only(right: 16),
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: state.isRelayAlive ? Colors.green.withOpacity(0.2) : Colors.red.withOpacity(0.2),
+                  color: agriDeadCount == 0 ? Colors.green.withOpacity(0.2) : Colors.red.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.circle, size: 10, color: state.isRelayAlive ? Colors.green : Colors.red),
+                    Icon(Icons.circle, size: 10, color: agriDeadCount == 0 ? Colors.green : Colors.red),
                     const SizedBox(width: 6),
                     Text(
-                      state.isRelayAlive ? "MESH HEALTHY" : "RELAY DOWN",
+                      agriDeadCount == 0
+                          ? "AGRI MESH OPTIMAL"
+                          : "AODV REROUTING ($agriDeadCount NODES DOWN)",
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
-                        color: state.isRelayAlive ? Colors.green : Colors.red,
+                        color: agriDeadCount == 0 ? Colors.green : Colors.red,
                       ),
                     ),
                   ],
@@ -61,9 +65,9 @@ class MapView extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Interactive Canvas Radar
+                  // Dynamic 2D Diamond Canvas Visualizer
                   Container(
-                    height: 280,
+                    height: 380,
                     width: double.infinity,
                     decoration: BoxDecoration(
                       color: const Color(0xFF0F172A),
@@ -72,14 +76,14 @@ class MapView extends ConsumerWidget {
                     ),
                     child: CustomPaint(
                       painter: MeshTopologyPainter(
-                        isRelayAlive: state.isRelayAlive,
+                        killedNodeIds: state.killedNodeIds,
                         lastActiveNode: state.lastActiveNode,
                       ),
                     ),
                   ),
                   const SizedBox(height: 14),
 
-                  // Horizontal Node List
+                  // Horizontal Node List (30 Nodes)
                   SizedBox(
                     height: 92,
                     child: ListView.separated(
@@ -223,64 +227,160 @@ class MapView extends ConsumerWidget {
   }
 }
 
-// Custom Topology Canvas Painter
+// Custom Painter Drawing Dynamic Dead Nodes & AODV Reroute Link Highlights
 class MeshTopologyPainter extends CustomPainter {
-  final bool isRelayAlive;
+  final Set<String> killedNodeIds;
   final String lastActiveNode;
 
   MeshTopologyPainter({
-    required this.isRelayAlive,
+    required this.killedNodeIds,
     required this.lastActiveNode,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final linePaint = Paint()
-      ..strokeWidth = 3.0
-      ..style = PaintingStyle.stroke;
+    final double w = size.width;
+    final double h = size.height;
 
-    final Offset n0 = Offset(size.width * 0.18, size.height * 0.30);
-    final Offset n1 = Offset(size.width * 0.18, size.height * 0.70);
-    final Offset n2 = Offset(size.width * 0.50, size.height * 0.50);
-    final Offset n3 = Offset(size.width * 0.82, size.height * 0.30);
-    final Offset n4 = Offset(size.width * 0.82, size.height * 0.70);
+    final double agriY = h * 0.18;
+    final double forestY = h * 0.50;
+    final double disasterY = h * 0.82;
 
-    // Dynamic Connections
-    linePaint.color = isRelayAlive ? Colors.green.withOpacity(0.8) : Colors.red.withOpacity(0.3);
-    canvas.drawLine(n0, n2, linePaint);
-    canvas.drawLine(n1, n2, linePaint);
-    canvas.drawLine(n2, n4, linePaint);
+    _drawDynamic2DSubnet(
+      canvas, w, agriY, "AGRICULTURE 2D MESH SUBNET",
+      Colors.lightBlueAccent, Colors.blue, "Agri_Node", "Agri_GW", 0,
+    );
 
-    linePaint.color = Colors.green.withOpacity(0.8);
-    canvas.drawLine(n3, n4, linePaint);
+    _drawDynamic2DSubnet(
+      canvas, w, forestY, "FOREST CANOPY 2D MESH SUBNET",
+      Colors.tealAccent, Colors.teal, "Forest_Node", "Forest_GW", 10,
+    );
 
-    // Nodes
-    _drawNode(canvas, n0, "Node 0\n(Agri)", Colors.blue);
-    _drawNode(canvas, n1, "Node 1\n(Forest)", Colors.teal);
-    _drawNode(canvas, n2, "Node 2\n(Relay)", isRelayAlive ? Colors.green : Colors.red);
-    _drawNode(canvas, n3, "Node 3\n(Disaster)", Colors.orange);
-    _drawNode(canvas, n4, "Node 4\n(Gateway)", AppColors.accentGold);
+    _drawDynamic2DSubnet(
+      canvas, w, disasterY, "DISASTER HAZARD 2D MESH SUBNET",
+      Colors.orangeAccent, Colors.orange, "Disaster_Node", "Disaster_GW", 20,
+    );
   }
 
-  void _drawNode(Canvas canvas, Offset center, String label, Color color) {
-    final paint = Paint()..color = color;
-    final glowPaint = Paint()..color = color.withOpacity(0.3);
+  void _drawDynamic2DSubnet(
+      Canvas canvas,
+      double width,
+      double centerY,
+      String title,
+      Color headerColor,
+      Color themeColor,
+      String nodePrefix,
+      String gatewayId,
+      int baseIdx,
+      ) {
+    final double x0 = width * 0.08;
+    final double x1 = width * 0.28;
+    final double x2 = width * 0.50;
+    final double x3 = width * 0.72;
+    final double x4 = width * 0.92;
+    final double dy = 28.0;
 
-    canvas.drawCircle(center, 20, glowPaint);
-    canvas.drawCircle(center, 12, paint);
+    // Node Map IDs
+    final String id0 = "${nodePrefix}${baseIdx}";
+    final String id1 = "${nodePrefix}${baseIdx + 1}";
+    final String id2 = "${nodePrefix}${baseIdx + 2}";
+    final String id3 = "${nodePrefix}${baseIdx + 3}";
+    final String id4 = "${nodePrefix}${baseIdx + 4}";
+    final String id5 = "${nodePrefix}${baseIdx + 5}";
+    final String id6 = "${nodePrefix}${baseIdx + 6}";
+    final String id7 = "${nodePrefix}${baseIdx + 7}";
+    final String id8 = "${nodePrefix}${baseIdx + 8}";
+    final String idGW = gatewayId;
 
-    const textStyle = TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold);
+    // Coordinates
+    final Offset n0  = Offset(x0, centerY);
+    final Offset n1  = Offset(x1, centerY - dy);
+    final Offset n2  = Offset(x1, centerY);
+    final Offset n3  = Offset(x1, centerY + dy);
+    final Offset n4  = Offset(x2, centerY - dy);
+    final Offset n5  = Offset(x2, centerY);
+    final Offset n6  = Offset(x2, centerY + dy);
+    final Offset n7  = Offset(x3, centerY - (dy * 0.6));
+    final Offset n8  = Offset(x3, centerY + (dy * 0.6));
+    final Offset nGW = Offset(x4, centerY);
+
+    // Subnet Header
+    _drawHeader(canvas, Offset(x0, centerY - dy - 18), title, headerColor);
+
+    // Draw Links with Dynamic AODV Color Logic
+    _drawLink(canvas, n0, n1, id0, id1, themeColor);
+    _drawLink(canvas, n0, n2, id0, id2, themeColor);
+    _drawLink(canvas, n0, n3, id0, id3, themeColor);
+
+    _drawLink(canvas, n1, n4, id1, id4, themeColor);
+    _drawLink(canvas, n2, n5, id2, id5, themeColor);
+    _drawLink(canvas, n3, n6, id3, id6, themeColor);
+
+    // Dynamic AODV Reroute Mesh Diagonals
+    _drawLink(canvas, n2, n4, id2, id4, themeColor);
+    _drawLink(canvas, n2, n6, id2, id6, themeColor);
+
+    _drawLink(canvas, n4, n7, id4, id7, themeColor);
+    _drawLink(canvas, n5, n7, id5, id7, themeColor);
+    _drawLink(canvas, n5, n8, id5, id8, themeColor);
+    _drawLink(canvas, n6, n8, id6, id8, themeColor);
+
+    _drawLink(canvas, n7, nGW, id7, idGW, themeColor);
+    _drawLink(canvas, n8, nGW, id8, idGW, themeColor);
+
+    // Draw Nodes (Red if in killedNodeIds, ThemeColor if Online)
+    _drawNode(canvas, n0,  "${nodePrefix.contains('Agri') ? 'A' : nodePrefix.contains('Forest') ? 'F' : 'D'}${baseIdx}",     killedNodeIds.contains(id0),  themeColor);
+    _drawNode(canvas, n1,  "${nodePrefix.contains('Agri') ? 'A' : nodePrefix.contains('Forest') ? 'F' : 'D'}${baseIdx + 1}", killedNodeIds.contains(id1),  themeColor);
+    _drawNode(canvas, n2,  "${nodePrefix.contains('Agri') ? 'A' : nodePrefix.contains('Forest') ? 'F' : 'D'}${baseIdx + 2}", killedNodeIds.contains(id2),  themeColor);
+    _drawNode(canvas, n3,  "${nodePrefix.contains('Agri') ? 'A' : nodePrefix.contains('Forest') ? 'F' : 'D'}${baseIdx + 3}", killedNodeIds.contains(id3),  themeColor);
+    _drawNode(canvas, n4,  "${nodePrefix.contains('Agri') ? 'A' : nodePrefix.contains('Forest') ? 'F' : 'D'}${baseIdx + 4}", killedNodeIds.contains(id4),  themeColor);
+    _drawNode(canvas, n5,  "${nodePrefix.contains('Agri') ? 'A' : nodePrefix.contains('Forest') ? 'F' : 'D'}${baseIdx + 5}", killedNodeIds.contains(id5),  themeColor);
+    _drawNode(canvas, n6,  "${nodePrefix.contains('Agri') ? 'A' : nodePrefix.contains('Forest') ? 'F' : 'D'}${baseIdx + 6}", killedNodeIds.contains(id6),  themeColor);
+    _drawNode(canvas, n7,  "${nodePrefix.contains('Agri') ? 'A' : nodePrefix.contains('Forest') ? 'F' : 'D'}${baseIdx + 7}", killedNodeIds.contains(id7),  themeColor);
+    _drawNode(canvas, n8,  "${nodePrefix.contains('Agri') ? 'A' : nodePrefix.contains('Forest') ? 'F' : 'D'}${baseIdx + 8}", killedNodeIds.contains(id8),  themeColor);
+    _drawNode(canvas, nGW, "${nodePrefix.contains('Agri') ? 'A' : nodePrefix.contains('Forest') ? 'F' : 'D'}GW",            killedNodeIds.contains(idGW), AppColors.accentGold);
+  }
+
+  void _drawLink(Canvas canvas, Offset p1, Offset p2, String idA, String idB, Color themeColor) {
+    final bool isDead = killedNodeIds.contains(idA) || killedNodeIds.contains(idB);
+    final paint = Paint()
+      ..strokeWidth = isDead ? 1.0 : 2.2
+      ..style = PaintingStyle.stroke
+      ..color = isDead ? Colors.red.withOpacity(0.25) : Colors.greenAccent.withOpacity(0.85);
+
+    canvas.drawLine(p1, p2, paint);
+  }
+
+  void _drawHeader(Canvas canvas, Offset offset, String title, Color color) {
+    final textStyle = TextStyle(color: color, fontSize: 8.5, fontWeight: FontWeight.bold, letterSpacing: 0.6);
+    final textPainter = TextPainter(
+      text: TextSpan(text: title, style: textStyle),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(canvas, offset);
+  }
+
+  void _drawNode(Canvas canvas, Offset center, String label, bool isKilled, Color themeColor) {
+    final Color nodeColor = isKilled ? Colors.red : themeColor;
+    final paint = Paint()..color = nodeColor;
+    final glowPaint = Paint()..color = nodeColor.withOpacity(isKilled ? 0.15 : 0.35);
+
+    canvas.drawCircle(center, 12, glowPaint);
+    canvas.drawCircle(center, 7, paint);
+
+    const textStyle = TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.bold);
     final textPainter = TextPainter(
       text: TextSpan(text: label, style: textStyle),
       textAlign: TextAlign.center,
       textDirection: TextDirection.ltr,
     );
     textPainter.layout();
-    textPainter.paint(canvas, Offset(center.dx - (textPainter.width / 2), center.dy + 22));
+    textPainter.paint(canvas, Offset(center.dx - (textPainter.width / 2), center.dy + 9));
   }
 
   @override
   bool shouldRepaint(covariant MeshTopologyPainter oldDelegate) {
-    return oldDelegate.isRelayAlive != isRelayAlive || oldDelegate.lastActiveNode != lastActiveNode;
+    return oldDelegate.killedNodeIds != killedNodeIds || oldDelegate.lastActiveNode != lastActiveNode;
   }
 }

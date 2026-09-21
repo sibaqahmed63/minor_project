@@ -16,3 +16,44 @@ final telemetryStreamProvider = StreamProvider<Map<String, dynamic>>((ref) {
   final wsService = ref.watch(webSocketServiceProvider);
   return wsService.telemetryStream;
 });
+
+/// Modern Notifier replacing legacy StateProvider for global relay override state
+class RelayKilledOverrideNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void setKilled(bool killed) => state = killed;
+  void toggle() => state = !state;
+}
+
+final relayKilledOverrideProvider =
+NotifierProvider<RelayKilledOverrideNotifier, bool>(RelayKilledOverrideNotifier.new);
+
+/// Synchronized Notifier managing dead node IDs across Map and Simulation Lab views
+class KilledNodesNotifier extends Notifier<Set<String>> {
+  @override
+  Set<String> build() => {};
+
+  void toggleNode(String nodeId) {
+    if (state.contains(nodeId)) {
+      state = Set.from(state)..remove(nodeId);
+    } else {
+      state = Set.from(state)..add(nodeId);
+    }
+  }
+
+  void killNodes(Iterable<String> nodeIds) {
+    state = Set.from(state)..addAll(nodeIds);
+  }
+
+  void restoreNodes(Iterable<String> nodeIds) {
+    state = Set.from(state)..removeAll(nodeIds);
+  }
+
+  void clearAll() {
+    state = {};
+  }
+}
+
+final killedNodesProvider =
+NotifierProvider<KilledNodesNotifier, Set<String>>(KilledNodesNotifier.new);
