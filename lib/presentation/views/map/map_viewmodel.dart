@@ -5,6 +5,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/sensor_models.dart';
 import '../../../providers/service_providers.dart';
 
+class AodvRouteInfo {
+  final String pathString;
+  final bool isOptimal;
+  final bool isBroken;
+  final int hopCount;
+  final String envName;
+
+  AodvRouteInfo({
+    required this.pathString,
+    required this.isOptimal,
+    required this.isBroken,
+    required this.hopCount,
+    required this.envName,
+  });
+}
+
 class MapNode {
   final String id;
   final String label;
@@ -59,6 +75,135 @@ class MapState {
     required this.currentTimestamp,
     this.selectedNodeId,
   });
+
+  /// Dynamically evaluates AODV dynamic routing table paths based on alive/dead nodes
+  AodvRouteInfo computeAodvRoute(String envPrefix, int baseIdx, String gwId) {
+    final letter = envPrefix.contains('Agri')
+        ? 'A'
+        : envPrefix.contains('Forest')
+        ? 'F'
+        : 'D';
+
+    final envName = envPrefix.contains('Agri')
+        ? 'Agriculture'
+        : envPrefix.contains('Forest')
+        ? 'Forest Canopy'
+        : 'Disaster Hazard';
+
+    String nodeId(int offset) => '$envPrefix${baseIdx + offset}';
+    String lbl(int offset) => '$letter${baseIdx + offset}';
+    String gwLbl = '${letter}GW';
+
+    bool isAlive(String id) => !killedNodeIds.contains(id);
+
+    // If source or sink is killed, the entire subnet path is broken
+    if (!isAlive(nodeId(0)) || !isAlive(gwId)) {
+      return AodvRouteInfo(
+        pathString: 'NO PATH AVAILABLE (ENDPOINT OFFLINE)',
+        isOptimal: false,
+        isBroken: true,
+        hopCount: 0,
+        envName: envName,
+      );
+    }
+
+    // Path 1 (Optimal Primary North Route): 0 -> 1 -> 4 -> 7 -> GW
+    if (isAlive(nodeId(1)) && isAlive(nodeId(4)) && isAlive(nodeId(7))) {
+      return AodvRouteInfo(
+        pathString: '${lbl(0)} ➔ ${lbl(1)} ➔ ${lbl(4)} ➔ ${lbl(7)} ➔ $gwLbl',
+        isOptimal: true,
+        isBroken: false,
+        hopCount: 4,
+        envName: envName,
+      );
+    }
+
+    // Path 2 (Self-Healed Diagonal Reroute around node 4 via node 5): 0 -> 1 -> 5 -> 7 -> GW
+    if (isAlive(nodeId(1)) && isAlive(nodeId(5)) && isAlive(nodeId(7))) {
+      return AodvRouteInfo(
+        pathString: '${lbl(0)} ➔ ${lbl(1)} ➔ ${lbl(5)} ➔ ${lbl(7)} ➔ $gwLbl',
+        isOptimal: false,
+        isBroken: false,
+        hopCount: 4,
+        envName: envName,
+      );
+    }
+
+    // Path 3 (Self-Healed Reroute via node 5 & South Egress node 8): 0 -> 1 -> 5 -> 8 -> GW
+    if (isAlive(nodeId(1)) && isAlive(nodeId(5)) && isAlive(nodeId(8))) {
+      return AodvRouteInfo(
+        pathString: '${lbl(0)} ➔ ${lbl(1)} ➔ ${lbl(5)} ➔ ${lbl(8)} ➔ $gwLbl',
+        isOptimal: false,
+        isBroken: false,
+        hopCount: 4,
+        envName: envName,
+      );
+    }
+
+    // Path 4 (Center Backbone Reroute via node 2): 0 -> 2 -> 5 -> 7 -> GW
+    if (isAlive(nodeId(2)) && isAlive(nodeId(5)) && isAlive(nodeId(7))) {
+      return AodvRouteInfo(
+        pathString: '${lbl(0)} ➔ ${lbl(2)} ➔ ${lbl(5)} ➔ ${lbl(7)} ➔ $gwLbl',
+        isOptimal: false,
+        isBroken: false,
+        hopCount: 4,
+        envName: envName,
+      );
+    }
+
+    // Path 5 (Center Backbone via node 2 & node 8): 0 -> 2 -> 5 -> 8 -> GW
+    if (isAlive(nodeId(2)) && isAlive(nodeId(5)) && isAlive(nodeId(8))) {
+      return AodvRouteInfo(
+        pathString: '${lbl(0)} ➔ ${lbl(2)} ➔ ${lbl(5)} ➔ ${lbl(8)} ➔ $gwLbl',
+        isOptimal: false,
+        isBroken: false,
+        hopCount: 4,
+        envName: envName,
+      );
+    }
+
+    // Path 6 (Center to North Reroute): 0 -> 2 -> 4 -> 7 -> GW
+    if (isAlive(nodeId(2)) && isAlive(nodeId(4)) && isAlive(nodeId(7))) {
+      return AodvRouteInfo(
+        pathString: '${lbl(0)} ➔ ${lbl(2)} ➔ ${lbl(4)} ➔ ${lbl(7)} ➔ $gwLbl',
+        isOptimal: false,
+        isBroken: false,
+        hopCount: 4,
+        envName: envName,
+      );
+    }
+
+    // Path 7 (Center to South Reroute): 0 -> 2 -> 6 -> 8 -> GW
+    if (isAlive(nodeId(2)) && isAlive(nodeId(6)) && isAlive(nodeId(8))) {
+      return AodvRouteInfo(
+        pathString: '${lbl(0)} ➔ ${lbl(2)} ➔ ${lbl(6)} ➔ ${lbl(8)} ➔ $gwLbl',
+        isOptimal: false,
+        isBroken: false,
+        hopCount: 4,
+        envName: envName,
+      );
+    }
+
+    // Path 8 (South Mesh Parallel Reroute): 0 -> 3 -> 6 -> 8 -> GW
+    if (isAlive(nodeId(3)) && isAlive(nodeId(6)) && isAlive(nodeId(8))) {
+      return AodvRouteInfo(
+        pathString: '${lbl(0)} ➔ ${lbl(3)} ➔ ${lbl(6)} ➔ ${lbl(8)} ➔ $gwLbl',
+        isOptimal: false,
+        isBroken: false,
+        hopCount: 4,
+        envName: envName,
+      );
+    }
+
+    // If no path survives
+    return AodvRouteInfo(
+      pathString: 'CRITICAL: ALL 2D MESH PATHS SEVERED',
+      isOptimal: false,
+      isBroken: true,
+      hopCount: 0,
+      envName: envName,
+    );
+  }
 
   MapState copyWith({
     List<MapNode>? nodes,

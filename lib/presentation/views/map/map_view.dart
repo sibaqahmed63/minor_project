@@ -5,11 +5,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/colors.dart';
 import 'map_viewmodel.dart';
 
-class MapView extends ConsumerWidget {
+class MapView extends ConsumerStatefulWidget {
   const MapView({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MapView> createState() => _MapViewState();
+}
+
+class _MapViewState extends ConsumerState<MapView> {
+  // 0 = Agriculture, 1 = Forest Canopy, 2 = Disaster Hazard
+  int _selectedSubnetIndex = 0;
+
+  @override
+  Widget build(BuildContext context) {
     final asyncState = ref.watch(mapViewModelProvider);
     final vm = ref.read(mapViewModelProvider.notifier);
 
@@ -25,7 +33,19 @@ class MapView extends ConsumerWidget {
             ? null
             : nodes.firstWhere((n) => n.id == state.selectedNodeId, orElse: () => nodes.first);
 
-        final agriDeadCount = state.killedNodeIds.where((id) => id.startsWith('Agri_')).length;
+        // Count total dead nodes across ALL subnets
+        final totalDeadCount = state.killedNodeIds.length;
+
+        // Evaluate dynamic AODV routes for ALL 3 subnets
+        final agriRoute = state.computeAodvRoute('Agri_Node', 0, 'Agri_GW');
+        final forestRoute = state.computeAodvRoute('Forest_Node', 10, 'Forest_GW');
+        final disasterRoute = state.computeAodvRoute('Disaster_Node', 20, 'Disaster_GW');
+
+        final activeRoute = _selectedSubnetIndex == 0
+            ? agriRoute
+            : _selectedSubnetIndex == 1
+            ? forestRoute
+            : disasterRoute;
 
         return Scaffold(
           appBar: AppBar(
@@ -35,21 +55,22 @@ class MapView extends ConsumerWidget {
                 margin: const EdgeInsets.only(right: 16),
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: agriDeadCount == 0 ? Colors.green.withOpacity(0.2) : Colors.red.withOpacity(0.2),
+                  color: totalDeadCount == 0 ? Colors.green.withOpacity(0.2) : Colors.red.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.circle, size: 10, color: agriDeadCount == 0 ? Colors.green : Colors.red),
+                    Icon(Icons.circle, size: 10, color: totalDeadCount == 0 ? Colors.green : Colors.red),
                     const SizedBox(width: 6),
                     Text(
-                      agriDeadCount == 0
-                          ? "AGRI MESH OPTIMAL"
-                          : "AODV REROUTING ($agriDeadCount NODES DOWN)",
+                      totalDeadCount == 0
+                          ? "ALL MESHES OPTIMAL"
+                          : "AODV REROUTING ($totalDeadCount NODES DOWN)",
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
-                        color: agriDeadCount == 0 ? Colors.green : Colors.red,
+                        color: totalDeadCount == 0 ? Colors.green : Colors.red,
                       ),
                     ),
                   ],
@@ -81,6 +102,23 @@ class MapView extends ConsumerWidget {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
+
+                  // 3-SUBNET DYNAMIC SELECTOR CHIPS
+                  Row(
+                    children: [
+                      _buildSubnetFilterChip("Agri", 0, agriRoute),
+                      const SizedBox(width: 8),
+                      _buildSubnetFilterChip("Forest", 1, forestRoute),
+                      const SizedBox(width: 8),
+                      _buildSubnetFilterChip("Disaster", 2, disasterRoute),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  // DYNAMIC AODV ACTIVE ROUTE INSPECTION BANNER (OVERFLOW FIXED)
+                  _buildAodvRouteBanner(context, activeRoute),
+
                   const SizedBox(height: 14),
 
                   // Horizontal Node List (30 Nodes)
@@ -219,6 +257,153 @@ class MapView extends ConsumerWidget {
     );
   }
 
+  Widget _buildSubnetFilterChip(String label, int index, AodvRouteInfo route) {
+    final isSelected = _selectedSubnetIndex == index;
+    final statusColor = route.isBroken
+        ? Colors.red
+        : route.isOptimal
+        ? Colors.green
+        : Colors.amber;
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _selectedSubnetIndex = index;
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFF0F172A) : Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected ? statusColor : Theme.of(context).dividerColor,
+              width: isSelected ? 1.8 : 1.0,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.circle, size: 8, color: statusColor),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    color: isSelected ? Colors.white : null,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAodvRouteBanner(BuildContext context, AodvRouteInfo route) {
+    final Color statusColor = route.isBroken
+        ? Colors.red
+        : route.isOptimal
+        ? Colors.greenAccent
+        : Colors.amberAccent;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: statusColor.withOpacity(0.6), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    Icon(Icons.alt_route_rounded, color: statusColor, size: 18),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        "ACTIVE ROUTE (${route.envName.toUpperCase()})",
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.3,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  route.isBroken
+                      ? "PATH SEVERED"
+                      : route.isOptimal
+                      ? "OPTIMAL PATH"
+                      : "SELF-HEALED REROUTE",
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.4),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    route.pathString,
+                    style: TextStyle(
+                      color: statusColor,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'monospace',
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+                if (!route.isBroken)
+                  Text(
+                    '${route.hopCount} Hops',
+                    style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   static String _formatAgo(DateTime dt) {
     final diff = DateTime.now().difference(dt);
     if (diff.inSeconds < 10) return 'Just now';
@@ -281,15 +466,15 @@ class MeshTopologyPainter extends CustomPainter {
     final double dy = 28.0;
 
     // Node Map IDs
-    final String id0 = "${nodePrefix}${baseIdx}";
-    final String id1 = "${nodePrefix}${baseIdx + 1}";
-    final String id2 = "${nodePrefix}${baseIdx + 2}";
-    final String id3 = "${nodePrefix}${baseIdx + 3}";
-    final String id4 = "${nodePrefix}${baseIdx + 4}";
-    final String id5 = "${nodePrefix}${baseIdx + 5}";
-    final String id6 = "${nodePrefix}${baseIdx + 6}";
-    final String id7 = "${nodePrefix}${baseIdx + 7}";
-    final String id8 = "${nodePrefix}${baseIdx + 8}";
+    final String id0 = "$nodePrefix$baseIdx";
+    final String id1 = "$nodePrefix${baseIdx + 1}";
+    final String id2 = "$nodePrefix${baseIdx + 2}";
+    final String id3 = "$nodePrefix${baseIdx + 3}";
+    final String id4 = "$nodePrefix${baseIdx + 4}";
+    final String id5 = "$nodePrefix${baseIdx + 5}";
+    final String id6 = "$nodePrefix${baseIdx + 6}";
+    final String id7 = "$nodePrefix${baseIdx + 7}";
+    final String id8 = "$nodePrefix${baseIdx + 8}";
     final String idGW = gatewayId;
 
     // Coordinates
@@ -329,7 +514,7 @@ class MeshTopologyPainter extends CustomPainter {
     _drawLink(canvas, n8, nGW, id8, idGW, themeColor);
 
     // Draw Nodes (Red if in killedNodeIds, ThemeColor if Online)
-    _drawNode(canvas, n0,  "${nodePrefix.contains('Agri') ? 'A' : nodePrefix.contains('Forest') ? 'F' : 'D'}${baseIdx}",     killedNodeIds.contains(id0),  themeColor);
+    _drawNode(canvas, n0,  "${nodePrefix.contains('Agri') ? 'A' : nodePrefix.contains('Forest') ? 'F' : 'D'}$baseIdx",     killedNodeIds.contains(id0),  themeColor);
     _drawNode(canvas, n1,  "${nodePrefix.contains('Agri') ? 'A' : nodePrefix.contains('Forest') ? 'F' : 'D'}${baseIdx + 1}", killedNodeIds.contains(id1),  themeColor);
     _drawNode(canvas, n2,  "${nodePrefix.contains('Agri') ? 'A' : nodePrefix.contains('Forest') ? 'F' : 'D'}${baseIdx + 2}", killedNodeIds.contains(id2),  themeColor);
     _drawNode(canvas, n3,  "${nodePrefix.contains('Agri') ? 'A' : nodePrefix.contains('Forest') ? 'F' : 'D'}${baseIdx + 3}", killedNodeIds.contains(id3),  themeColor);
